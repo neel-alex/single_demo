@@ -1,6 +1,7 @@
-from gym import Wrapper
 import random
 import json
+
+from gym import Wrapper
 
 
 class BackwardsResetWrapper(Wrapper):
@@ -46,6 +47,7 @@ class BackwardsResetWrapper(Wrapper):
         # How far from the end of the trajectory to start
         self.reset_point = 0
 
+
     def step(self, action):
         """ Normal step, saves most recent reward and done.
         """
@@ -59,22 +61,29 @@ class BackwardsResetWrapper(Wrapper):
             Then, reset the environment and advance it on the trajectory
                 for a given number of steps.
         """
-        assert self.last_done, "Can only reset a backwards reset environment at the end of a trajectory!"
+        if not self.last_done:
+            print("WARNING: Can only reset a backwards reset environment at the end of a trajectory!")
+            print("     The current trajectory and rewards will not be counted.")
+        else:
+            self.recent_rewards.pop(0)
+            self.recent_rewards.append(self.traj_reward >= self.reward_thresh)
+
+            recent_avg = sum(self.recent_rewards) / len(self.recent_rewards)
+
+            if recent_avg >= self.advance_limit:
+                self.reset_point += random.randint(1, self.reset_step)
+                self.recent_rewards = [0] * self.history_len
+                print(f"Reset point increased to {self.reset_point}")
+
+        self.traj_reward, self.last_done = 0, False
         obs = super().reset()
 
-        self.recent_rewards.pop(0)
-        self.recent_rewards.append(self.last_reward >= self.reward_thresh)
-        self.traj_reward, self.last_done = 0, False
-
-        recent_avg = sum(self.recent_rewards) / len(self.recent_rewards)
-
-        if recent_avg >= self.advance_limit:
-            self.reset_point += random.randint(1, self.reset_step)
-            self.recent_rewards = [0] * self.history_len
 
         num_steps = self.trajectory_len - self.reset_point - random.randint(1, self.reset_step)
         num_steps = max(0, num_steps)
         for i in range(num_steps):
             obs, rew, done, _ = self.step(self.actions[i])
+            self.traj_reward += rew
 
         return obs
+
